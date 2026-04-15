@@ -91,6 +91,42 @@ static void setEyelidServoAngle(int angle) {
   gEyelidServo.write(gEyelidServoAngle);
 }
 
+static void movePanSmooth(int target, int stepMs) {
+  int step = (target > gPanServoAngle) ? 1 : -1;
+  while (gPanServoAngle != target) {
+    setPanServoAngle(gPanServoAngle + step);
+    delay(stepMs);
+  }
+}
+
+static void moveEyelidSmooth(int target, int stepMs) {
+  int step = (target > gEyelidServoAngle) ? 1 : -1;
+  while (gEyelidServoAngle != target) {
+    setEyelidServoAngle(gEyelidServoAngle + step);
+    delay(stepMs);
+  }
+}
+
+static void demoSequence() {
+  // Slowly open eyelid if closed
+  if (gEyelidClosed) {
+    moveEyelidSmooth(EYELID_OPEN_DEG, 12);
+    gEyelidClosed = false;
+  }
+  delay(150);
+
+  // Pan left a little
+  movePanSmooth(70, 8);
+  delay(200);
+
+  // Pan right more
+  movePanSmooth(120, 8);
+  delay(300);
+
+  // Return to center
+  movePanSmooth(PAN_SERVO_DEFAULT_DEG, 8);
+}
+
 static void toggleEyelid() {
   if (gEyelidClosed) {
     setEyelidServoAngle(EYELID_OPEN_DEG);
@@ -102,11 +138,7 @@ static void toggleEyelid() {
 }
 
 static void applyButtonsToPanServo(uint8_t buttonsMask) {
-  if (buttonsMask & (1u << 0)) {
-    setPanServoAngle(0);
-  } else if (buttonsMask & (1u << 2)) {
-    setPanServoAngle(90);
-  } else if (buttonsMask & (1u << 3)) {
+  if (buttonsMask & (1u << 3)) {
     setPanServoAngle(135);
   }
 }
@@ -271,17 +303,29 @@ void loop() {
 
     uint8_t prevButtonsMask = gPrevButtonsMask;
 
+    bool demoNowPressed = (packet.buttonsMask & (1u << 0)) != 0;
+    bool demoWasPressed = (prevButtonsMask & (1u << 0)) != 0;
+    if (demoNowPressed && !demoWasPressed) {
+      demoSequence();
+    }
+
     bool blinkNowPressed = (packet.buttonsMask & (1u << BUTTON_IDX_BLINK)) != 0;
     bool blinkWasPressed = (prevButtonsMask & (1u << BUTTON_IDX_BLINK)) != 0;
     if (blinkNowPressed && !blinkWasPressed) {
+      applySleepPose();
+    }
+
+    bool eyelidToggleNowPressed =
+        (packet.buttonsMask & (1u << BUTTON_IDX_GAIN_TOGGLE)) != 0;
+    bool eyelidToggleWasPressed =
+        (prevButtonsMask & (1u << BUTTON_IDX_GAIN_TOGGLE)) != 0;
+    if (eyelidToggleNowPressed && !eyelidToggleWasPressed) {
       toggleEyelid();
     }
 
-    bool toggleNowPressed =
-        (packet.buttonsMask & (1u << BUTTON_IDX_GAIN_TOGGLE)) != 0;
-    bool toggleWasPressed =
-        (prevButtonsMask & (1u << BUTTON_IDX_GAIN_TOGGLE)) != 0;
-    if (toggleNowPressed && !toggleWasPressed) {
+    bool gainToggleNowPressed = (packet.buttonsMask & (1u << 2)) != 0;
+    bool gainToggleWasPressed = (prevButtonsMask & (1u << 2)) != 0;
+    if (gainToggleNowPressed && !gainToggleWasPressed) {
       gUseSlowEncoderGain = !gUseSlowEncoderGain;
       Serial.print("Encoder gain mode -> ");
       if (gUseSlowEncoderGain) {
