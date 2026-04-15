@@ -15,7 +15,7 @@ static constexpr uint8_t SERVO_POWER_KILL_PIN =
     6;  // HIGH cuts servo power (Adafruit #1400 KILL pin)
 static constexpr uint8_t SERVO_POWER_ON_PIN =
     7;  // Pulse HIGH to restore servo power (simulate button press via S9013)
-static constexpr uint32_t SERVO_POWER_ON_PULSE_MS = 100;
+static constexpr uint32_t SERVO_POWER_ON_PULSE_MS = 250;
 
 static constexpr int SERVO_MIN_DEG = 0;
 static constexpr int SERVO_MAX_DEG = 180;
@@ -121,6 +121,7 @@ static void killServoPower() {
 
 static void restoreServoPower() {
   digitalWrite(SERVO_POWER_KILL_PIN, LOW);
+  delay(200);  // Let KILL de-assert before simulating button press
   digitalWrite(SERVO_POWER_ON_PIN, HIGH);
   delay(SERVO_POWER_ON_PULSE_MS);
   digitalWrite(SERVO_POWER_ON_PIN, LOW);
@@ -199,11 +200,16 @@ void setup() {
   Serial.println();
   Serial.println("Darcy ESP-NOW receiver booting...");
 
-  // Keep servo power enabled (LOW = power on, HIGH = kill)
+  // Ensure servo power is on at boot
   pinMode(SERVO_POWER_KILL_PIN, OUTPUT);
   digitalWrite(SERVO_POWER_KILL_PIN, LOW);
   pinMode(SERVO_POWER_ON_PIN, OUTPUT);
   digitalWrite(SERVO_POWER_ON_PIN, LOW);
+  delay(200);
+  digitalWrite(SERVO_POWER_ON_PIN, HIGH);
+  delay(SERVO_POWER_ON_PULSE_MS);
+  digitalWrite(SERVO_POWER_ON_PIN, LOW);
+  Serial.println("[POWER] Boot power-on pulse sent");
 
   initServos();
   if (!initEspNow()) {
