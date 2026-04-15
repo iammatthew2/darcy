@@ -27,6 +27,9 @@ static constexpr int EYELID_OPEN_DEG = 0;
 static constexpr int EYELID_CLOSED_DEG = 90;
 static constexpr int SLEEP_POSE_PAN_STEP_MS = 10;
 static constexpr int SLEEP_POSE_EYELID_STEP_MS = 6;
+static constexpr int BLINK_CLOSE_STEP_MS = 1;
+static constexpr int BLINK_OPEN_STEP_MS = 1;
+static constexpr uint32_t BLINK_PAUSE_MS = 180;
 static constexpr uint32_t LINK_TIMEOUT_MS = 4000;
 static constexpr uint8_t WAKE_PIN = 3;  // GPIO3: LOW wakes from deep sleep
 static constexpr uint32_t BOARD_SLEEP_DELAY_MS =
@@ -110,23 +113,61 @@ static void moveEyelidSmooth(int target, int stepMs) {
 }
 
 static void demoSequence() {
-  // Slowly open eyelid if closed
+  // 1. Slowly open eyelid if closed (~1s)
   if (gEyelidClosed) {
     moveEyelidSmooth(EYELID_OPEN_DEG, 12);
     gEyelidClosed = false;
   }
+
+  // 2. Pause
   delay(150);
 
-  // Pan left a little
+  // 3. Pan left a little
   movePanSmooth(70, 8);
+  // 4. Hold
   delay(200);
 
-  // Pan right more
+  // 5. Pan right more
   movePanSmooth(120, 8);
+  // 6. Hold
   delay(300);
 
-  // Return to center
+  // 7. Return to center
   movePanSmooth(PAN_SERVO_DEFAULT_DEG, 8);
+
+  // 8. Pan far right, hold
+  movePanSmooth(SERVO_MAX_DEG, 4);
+  delay(200);
+
+  // 9. Close lid halfway
+  moveEyelidSmooth(EYELID_CLOSED_DEG / 2, 8);
+
+  // 10. Pan far left fast
+  movePanSmooth(SERVO_MIN_DEG, 4);
+
+  // 11. Drift just a little right slow, hold
+  movePanSmooth(20, 12);
+  delay(400);
+
+  // 12. Return to center, open eyelid
+  movePanSmooth(PAN_SERVO_DEFAULT_DEG, 8);
+  moveEyelidSmooth(EYELID_OPEN_DEG, 8);
+  gEyelidClosed = false;
+}
+
+static void doBlink() {
+  // Close from wherever the lid currently is
+  for (int pos = gEyelidServoAngle; pos <= EYELID_CLOSED_DEG; pos++) {
+    setEyelidServoAngle(pos);
+    delay(BLINK_CLOSE_STEP_MS);
+  }
+  delay(BLINK_PAUSE_MS);
+  // Reopen fully
+  for (int pos = EYELID_CLOSED_DEG; pos >= EYELID_OPEN_DEG; pos--) {
+    setEyelidServoAngle(pos);
+    delay(BLINK_OPEN_STEP_MS);
+  }
+  gEyelidClosed = false;
 }
 
 static void toggleEyelid() {
@@ -139,11 +180,6 @@ static void toggleEyelid() {
   }
 }
 
-static void applyButtonsToPanServo(uint8_t buttonsMask) {
-  if (buttonsMask & (1u << 3)) {
-    setPanServoAngle(135);
-  }
-}
 
 static void applySleepPose() {
   movePanSmooth(PAN_SERVO_DEFAULT_DEG, SLEEP_POSE_PAN_STEP_MS);
@@ -308,6 +344,13 @@ void loop() {
     bool demoWasPressed = (prevButtonsMask & (1u << 0)) != 0;
     if (demoNowPressed && !demoWasPressed) {
       demoSequence();
+      gLastRxMs = millis();  // Prevent link timeout firing after blocking demo
+    }
+
+    bool blinkAnimNowPressed = (packet.buttonsMask & (1u << 3)) != 0;
+    bool blinkAnimWasPressed = (prevButtonsMask & (1u << 3)) != 0;
+    if (blinkAnimNowPressed && !blinkAnimWasPressed) {
+      doBlink();
     }
 
     bool blinkNowPressed = (packet.buttonsMask & (1u << BUTTON_IDX_BLINK)) != 0;
@@ -345,8 +388,6 @@ void loop() {
                                      : PAN_SERVO_ENCODER_FAST_DEG_PER_STEP;
       setPanServoAngle(gPanServoAngle + static_cast<int>(movementSteps) * gain);
     }
-
-    applyButtonsToPanServo(packet.buttonsMask);
 
     if (packet.encoderPressed) {
       setPanServoAngle(PAN_SERVO_DEFAULT_DEG);
