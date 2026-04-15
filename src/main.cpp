@@ -70,6 +70,7 @@ EyelidState gEyelidState = EYELID_CLOSED;
 int gLastEncoderDir = 0;
 uint32_t gLastEncoderFastMoveMs = 0;
 bool gReboundApplied = false;
+volatile bool gDemoAbort = false;
 bool gServoPowerKilled = false;
 uint32_t gBoardSleepAt =
     0;  // millis() target for deep sleep; 0 = not scheduled
@@ -120,47 +121,108 @@ static void moveEyelidSmooth(int target, int stepMs) {
   }
 }
 
+// Interruptible variants — return false if a packet arrived mid-move.
+static bool movePanSmoothI(int target, int stepMs) {
+  int step = (target > gPanServoAngle) ? 1 : -1;
+  while (gPanServoAngle != target) {
+    if (gDemoAbort) return false;
+    setPanServoAngle(gPanServoAngle + step);
+    delay(stepMs);
+  }
+  return true;
+}
+
+static bool moveEyelidSmoothI(int target, int stepMs) {
+  int step = (target > gEyelidServoAngle) ? 1 : -1;
+  while (gEyelidServoAngle != target) {
+    if (gDemoAbort) return false;
+    setEyelidServoAngle(gEyelidServoAngle + step);
+    delay(stepMs);
+  }
+  return true;
+}
+
+static bool demoHold(uint32_t ms) {
+  uint32_t start = millis();
+  while (millis() - start < ms) {
+    if (gDemoAbort) return false;
+    delay(1);
+  }
+  return true;
+}
+
+// Abort the demo and reset the link timer so the incoming packet is handled cleanly.
+#define DEMO_STEP(expr) do { if (!(expr)) { gLastRxMs = millis(); return; } } while (0)
+
 static void demoSequence() {
-  // 1. Slowly open eyelid if not already open (~1s)
+  Serial.println("[DEMO] start");
+  gDemoAbort = false;
+
+  // --- Phase 1: Wake up ---
   if (gEyelidState != EYELID_OPEN) {
-    moveEyelidSmooth(EYELID_OPEN_DEG, 12);
+    DEMO_STEP(moveEyelidSmoothI(EYELID_OPEN_DEG, 12));
     gEyelidState = EYELID_OPEN;
   }
+  DEMO_STEP(demoHold(800));
 
-  // 2. Pause
-  delay(150);
+  // --- Phase 2: Lazy look around ---
+  DEMO_STEP(movePanSmoothI(65, 10));
+  DEMO_STEP(demoHold(600));
+  DEMO_STEP(movePanSmoothI(115, 10));
+  DEMO_STEP(demoHold(400));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 10));
+  DEMO_STEP(demoHold(500));
 
-  // 3. Pan left a little
-  movePanSmooth(70, 8);
-  // 4. Hold
-  delay(200);
+  // --- Phase 3: Something catches attention (snap right, linger, drift back) ---
+  DEMO_STEP(movePanSmoothI(145, 3));
+  DEMO_STEP(demoHold(300));
+  DEMO_STEP(movePanSmoothI(105, 12));
+  DEMO_STEP(demoHold(200));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 8));
 
-  // 5. Pan right more
-  movePanSmooth(120, 8);
-  // 6. Hold
-  delay(300);
-
-  // 7. Return to center
-  movePanSmooth(PAN_SERVO_DEFAULT_DEG, 8);
-
-  // 8. Pan far right, hold
-  movePanSmooth(SERVO_MAX_DEG, 4);
-  delay(200);
-
-  // 9. Close lid halfway
-  moveEyelidSmooth(EYELID_CLOSED_DEG / 2, 8);
-
-  // 10. Pan far left fast
-  movePanSmooth(SERVO_MIN_DEG, 4);
-
-  // 11. Drift just a little right slow, hold
-  movePanSmooth(20, 12);
-  delay(400);
-
-  // 12. Return to center, open eyelid
-  movePanSmooth(PAN_SERVO_DEFAULT_DEG, 8);
-  moveEyelidSmooth(EYELID_OPEN_DEG, 8);
+  // --- Phase 4: Blink ---
+  for (int pos = gEyelidServoAngle; pos <= EYELID_CLOSED_DEG; pos++) {
+    if (gDemoAbort) { gLastRxMs = millis(); return; }
+    setEyelidServoAngle(pos);
+    delay(BLINK_CLOSE_STEP_MS);
+  }
+  DEMO_STEP(demoHold(BLINK_PAUSE_MS));
+  for (int pos = EYELID_CLOSED_DEG; pos >= EYELID_OPEN_DEG; pos--) {
+    if (gDemoAbort) { gLastRxMs = millis(); return; }
+    setEyelidServoAngle(pos);
+    delay(BLINK_OPEN_STEP_MS);
+  }
   gEyelidState = EYELID_OPEN;
+  DEMO_STEP(demoHold(400));
+
+  // --- Phase 5: Drowsy — half-lid, slow wander ---
+  DEMO_STEP(moveEyelidSmoothI(EYELID_HALF_DEG, 4));
+  gEyelidState = EYELID_HALF;
+  DEMO_STEP(movePanSmoothI(70, 15));
+  DEMO_STEP(demoHold(700));
+  DEMO_STEP(movePanSmoothI(112, 15));
+  DEMO_STEP(demoHold(500));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 12));
+  DEMO_STEP(demoHold(800));
+
+  // --- Phase 6: Snap to attention ---
+  DEMO_STEP(moveEyelidSmoothI(EYELID_OPEN_DEG, 4));
+  gEyelidState = EYELID_OPEN;
+  DEMO_STEP(movePanSmoothI(30, 3));
+  DEMO_STEP(demoHold(150));
+  DEMO_STEP(movePanSmoothI(150, 3));
+  DEMO_STEP(demoHold(150));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 5));
+  DEMO_STEP(demoHold(300));
+
+  // --- Phase 7: Settle ---
+  DEMO_STEP(movePanSmoothI(80, 12));
+  DEMO_STEP(demoHold(400));
+  DEMO_STEP(movePanSmoothI(95, 12));
+  DEMO_STEP(demoHold(600));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 8));
+
+  Serial.println("[DEMO] end");
 }
 
 static void doBlink() {
@@ -245,6 +307,10 @@ static void onDataRecv(const esp_now_recv_info_t* info, const uint8_t* data,
   memcpy((void*)&gLatestPacket, data, sizeof(RemotePacket));
   memcpy((void*)gSourceMac, info->src_addr, sizeof(gSourceMac));
   gPacketReady = true;
+  if (gLatestPacket.buttonsMask != 0 || gLatestPacket.encoderDelta != 0 ||
+      gLatestPacket.encoderPressed != 0) {
+    gDemoAbort = true;
+  }
 }
 
 static bool initEspNow() {
@@ -355,7 +421,7 @@ void loop() {
     bool demoWasPressed = (prevButtonsMask & (1u << 0)) != 0;
     if (demoNowPressed && !demoWasPressed) {
       demoSequence();
-      gLastRxMs = millis();  // Prevent link timeout firing after blocking demo
+      gLastRxMs = millis();
     }
 
     bool blinkAnimNowPressed = (packet.buttonsMask & (1u << 3)) != 0;
