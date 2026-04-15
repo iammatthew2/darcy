@@ -25,6 +25,8 @@ static constexpr int PAN_SERVO_ENCODER_FAST_DEG_PER_STEP = 13;
 static constexpr int PAN_SERVO_ENCODER_SLOW_DEG_PER_STEP = 5;
 static constexpr int EYELID_OPEN_DEG = 0;
 static constexpr int EYELID_CLOSED_DEG = 90;
+static constexpr int SLEEP_POSE_PAN_STEP_MS = 10;
+static constexpr int SLEEP_POSE_EYELID_STEP_MS = 6;
 static constexpr uint32_t LINK_TIMEOUT_MS = 4000;
 static constexpr uint8_t WAKE_PIN = 3;  // GPIO3: LOW wakes from deep sleep
 static constexpr uint32_t BOARD_SLEEP_DELAY_MS =
@@ -144,9 +146,8 @@ static void applyButtonsToPanServo(uint8_t buttonsMask) {
 }
 
 static void applySleepPose() {
-  // Sleep pose: center pan and close eyelid
-  setPanServoAngle(PAN_SERVO_DEFAULT_DEG);
-  setEyelidServoAngle(EYELID_CLOSED_DEG);
+  movePanSmooth(PAN_SERVO_DEFAULT_DEG, SLEEP_POSE_PAN_STEP_MS);
+  moveEyelidSmooth(EYELID_CLOSED_DEG, SLEEP_POSE_EYELID_STEP_MS);
   gEyelidClosed = true;
 }
 
