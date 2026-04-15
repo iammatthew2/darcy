@@ -43,14 +43,21 @@ If no packet is received for 4 seconds, Darcy enters the same **sleep pose** (pa
 - Eyelid servo on GPIO 5
 - Servo power KILL on GPIO 6 — HIGH cuts servo power via Adafruit #1400 KILL pin
 - Servo power ON on GPIO 7 — pulse HIGH to simulate button press via S9013 transistor (1kΩ base resistor, emitter to GND pad, collector to button pad)
-- Sleep/wake on GPIO 3 — reserved for deep sleep wake logic
+- Deep sleep wake on GPIO 3 — pull LOW to wake the board from deep sleep
 
-## TODO
+## Power management
 
-- [ ] Wire Adafruit Push-Button Power Switch (#1400) between servo battery and servo power rail
-  - KILL pin → GPIO 6: ESP32 drives HIGH to cut servo power
-  - Button pad simulation: S9013 NPN transistor with 1kΩ resistor on base to GPIO 7, emitter to GND button pad, collector to high-side button pad — pulse to restore servo power
-- [ ] Implement deep sleep and wake logic using GPIO 3
+Servo power is controlled by an Adafruit Push-Button Power Switch (#1400) wired between the servo battery and the servo power rail.
+
+### Servo power
+- On boot, GPIO 6 is held LOW (KILL de-asserted) and GPIO 7 is pulsed HIGH for 250 ms to simulate a button press, ensuring the #1400 is switched on regardless of its prior state.
+- When Darcy enters sleep pose (link loss or sleep signal from Daryl), it drives GPIO 6 HIGH after 300 ms to cut servo power.
+- When a new packet arrives while servo power is off, GPIO 6 is released LOW, then GPIO 7 is pulsed HIGH for 250 ms to restore servo power.
+
+### Board deep sleep
+- 5 minutes after servo power is cut, the ESP32 enters deep sleep.
+- If a packet arrives during that window, the deep sleep countdown is cancelled and normal operation resumes.
+- The board wakes from deep sleep when GPIO 3 is pulled LOW and performs a full reboot, including the boot-time servo power-on pulse.
 
 ## Servos
 

@@ -2,6 +2,7 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_sleep.h>
 
 #include <cstring>
 
@@ -25,6 +26,9 @@ static constexpr int PAN_SERVO_ENCODER_SLOW_DEG_PER_STEP = 5;
 static constexpr int EYELID_OPEN_DEG = 0;
 static constexpr int EYELID_CLOSED_DEG = 90;
 static constexpr uint32_t LINK_TIMEOUT_MS = 4000;
+static constexpr uint8_t WAKE_PIN = 3;  // GPIO3: LOW wakes from deep sleep
+static constexpr uint32_t BOARD_SLEEP_DELAY_MS =
+    300000;  // Deep sleep 5min after servo power kill
 static constexpr uint8_t BUTTON_IDX_BLINK = 1;
 static constexpr uint8_t BUTTON_IDX_GAIN_TOGGLE = 4;
 static constexpr uint8_t BUTTON_IDX_SLEEP = 5;
@@ -54,6 +58,8 @@ uint8_t gPrevButtonsMask = 0;
 bool gUseSlowEncoderGain = false;
 bool gEyelidClosed = false;
 bool gServoPowerKilled = false;
+uint32_t gBoardSleepAt =
+    0;  // millis() target for deep sleep; 0 = not scheduled
 
 static bool isZeroMac(const uint8_t* mac) {
   for (size_t i = 0; i < 6; ++i) {
@@ -116,10 +122,14 @@ static void killServoPower() {
   delay(300);  // Allow servos to reach sleep pose before cutting power
   digitalWrite(SERVO_POWER_KILL_PIN, HIGH);
   gServoPowerKilled = true;
-  Serial.println("[POWER] Servo power killed");
+  gBoardSleepAt = millis() + BOARD_SLEEP_DELAY_MS;
+  Serial.print("[POWER] Servo power killed — deep sleep in ");
+  Serial.print(BOARD_SLEEP_DELAY_MS / 1000);
+  Serial.println("s");
 }
 
 static void restoreServoPower() {
+  gBoardSleepAt = 0;
   digitalWrite(SERVO_POWER_KILL_PIN, LOW);
   delay(200);  // Let KILL de-assert before simulating button press
   digitalWrite(SERVO_POWER_ON_PIN, HIGH);
@@ -127,6 +137,13 @@ static void restoreServoPower() {
   digitalWrite(SERVO_POWER_ON_PIN, LOW);
   gServoPowerKilled = false;
   Serial.println("[POWER] Servo power restored");
+}
+
+static void enterDeepSleep() {
+  Serial.println("[SLEEP] Entering deep sleep — GPIO3 LOW to wake");
+  Serial.flush();
+  esp_deep_sleep_enable_gpio_wakeup(1ULL << WAKE_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+  esp_deep_sleep_start();
 }
 
 static void onSleepSignal() {
@@ -311,6 +328,10 @@ void loop() {
     applySleepPose();
     killServoPower();
     Serial.println("link timeout -> sleep pose (pan centered, eyelid closed)");
+  }
+
+  if (gBoardSleepAt != 0 && millis() >= gBoardSleepAt) {
+    enterDeepSleep();
   }
 
   delay(1);
