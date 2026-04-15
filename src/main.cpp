@@ -173,8 +173,8 @@ static void demoSequence() {
   DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 10));
   DEMO_STEP(demoHold(500));
 
-  // --- Phase 3: Something catches attention (snap right, linger, drift back) ---
-  DEMO_STEP(movePanSmoothI(145, 3));
+  // --- Phase 3: Something catches attention (look right, linger, drift back) ---
+  DEMO_STEP(movePanSmoothI(145, 7));
   DEMO_STEP(demoHold(300));
   DEMO_STEP(movePanSmoothI(105, 12));
   DEMO_STEP(demoHold(200));
@@ -208,11 +208,11 @@ static void demoSequence() {
   // --- Phase 6: Snap to attention ---
   DEMO_STEP(moveEyelidSmoothI(EYELID_OPEN_DEG, 4));
   gEyelidState = EYELID_OPEN;
-  DEMO_STEP(movePanSmoothI(30, 3));
+  DEMO_STEP(movePanSmoothI(30, 8));
   DEMO_STEP(demoHold(150));
-  DEMO_STEP(movePanSmoothI(150, 3));
+  DEMO_STEP(movePanSmoothI(150, 8));
   DEMO_STEP(demoHold(150));
-  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 5));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 9));
   DEMO_STEP(demoHold(300));
 
   // --- Phase 7: Settle ---
@@ -221,6 +221,118 @@ static void demoSequence() {
   DEMO_STEP(movePanSmoothI(95, 12));
   DEMO_STEP(demoHold(600));
   DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 8));
+
+  // --- Phase 8: Second blink, slower ---
+  DEMO_STEP(demoHold(500));
+  for (int pos = gEyelidServoAngle; pos <= EYELID_CLOSED_DEG; pos++) {
+    if (gDemoAbort) { gLastRxMs = millis(); return; }
+    setEyelidServoAngle(pos);
+    delay(2);
+  }
+  DEMO_STEP(demoHold(250));
+  for (int pos = EYELID_CLOSED_DEG; pos >= EYELID_OPEN_DEG; pos--) {
+    if (gDemoAbort) { gLastRxMs = millis(); return; }
+    setEyelidServoAngle(pos);
+    delay(2);
+  }
+  gEyelidState = EYELID_OPEN;
+
+  // --- Phase 9: Curious — slow creep left, pause, small right nudge ---
+  DEMO_STEP(demoHold(300));
+  DEMO_STEP(movePanSmoothI(55, 14));
+  DEMO_STEP(demoHold(900));
+  DEMO_STEP(movePanSmoothI(75, 10));
+  DEMO_STEP(demoHold(400));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 10));
+  DEMO_STEP(demoHold(300));
+
+  // --- Phase 10: Drowsy again — half-lid, barely moving ---
+  DEMO_STEP(moveEyelidSmoothI(EYELID_HALF_DEG, 5));
+  gEyelidState = EYELID_HALF;
+  DEMO_STEP(demoHold(600));
+  DEMO_STEP(movePanSmoothI(85, 18));
+  DEMO_STEP(demoHold(1000));
+  DEMO_STEP(movePanSmoothI(98, 18));
+  DEMO_STEP(demoHold(800));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 15));
+  DEMO_STEP(demoHold(500));
+
+  // --- Phase 11: Startle — eyes wide, alert scan ---
+  DEMO_STEP(moveEyelidSmoothI(EYELID_OPEN_DEG, 3));
+  gEyelidState = EYELID_OPEN;
+  DEMO_STEP(movePanSmoothI(160, 7));
+  DEMO_STEP(demoHold(120));
+  DEMO_STEP(movePanSmoothI(20, 7));
+  DEMO_STEP(demoHold(120));
+  DEMO_STEP(movePanSmoothI(130, 7));
+  DEMO_STEP(demoHold(200));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 9));
+  DEMO_STEP(demoHold(600));
+
+  // --- Phase 12: Wind down ---
+  DEMO_STEP(movePanSmoothI(78, 13));
+  DEMO_STEP(demoHold(500));
+  DEMO_STEP(movePanSmoothI(102, 13));
+  DEMO_STEP(demoHold(700));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 10));
+
+  // --- Phase 13: Third blink, lazy ---
+  DEMO_STEP(demoHold(600));
+  for (int pos = gEyelidServoAngle; pos <= EYELID_CLOSED_DEG; pos++) {
+    if (gDemoAbort) { gLastRxMs = millis(); return; }
+    setEyelidServoAngle(pos);
+    delay(3);
+  }
+  DEMO_STEP(demoHold(350));
+  for (int pos = EYELID_CLOSED_DEG; pos >= EYELID_OPEN_DEG; pos--) {
+    if (gDemoAbort) { gLastRxMs = millis(); return; }
+    setEyelidServoAngle(pos);
+    delay(3);
+  }
+  gEyelidState = EYELID_OPEN;
+
+  // --- Phase 14: Thinking — slow creep right, pause, reconsider left ---
+  DEMO_STEP(demoHold(400));
+  DEMO_STEP(movePanSmoothI(120, 16));
+  DEMO_STEP(demoHold(1000));
+  DEMO_STEP(movePanSmoothI(100, 20));
+  DEMO_STEP(demoHold(500));
+  DEMO_STEP(movePanSmoothI(60, 14));
+  DEMO_STEP(demoHold(800));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 12));
+  DEMO_STEP(demoHold(400));
+
+  // --- Phase 15: Half-lid drift, micro jitters ---
+  DEMO_STEP(moveEyelidSmoothI(EYELID_HALF_DEG, 6));
+  gEyelidState = EYELID_HALF;
+  DEMO_STEP(demoHold(500));
+  DEMO_STEP(movePanSmoothI(95, 20));
+  DEMO_STEP(demoHold(300));
+  DEMO_STEP(movePanSmoothI(86, 20));
+  DEMO_STEP(demoHold(400));
+  DEMO_STEP(movePanSmoothI(93, 20));
+  DEMO_STEP(demoHold(600));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 18));
+  DEMO_STEP(demoHold(700));
+
+  // --- Phase 16: Notice something left, look back right slowly ---
+  DEMO_STEP(moveEyelidSmoothI(EYELID_OPEN_DEG, 5));
+  gEyelidState = EYELID_OPEN;
+  DEMO_STEP(movePanSmoothI(45, 9));
+  DEMO_STEP(demoHold(700));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 14));
+  DEMO_STEP(demoHold(300));
+  DEMO_STEP(movePanSmoothI(135, 11));
+  DEMO_STEP(demoHold(900));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 12));
+  DEMO_STEP(demoHold(500));
+
+  // --- Phase 17: Final settle ---
+  DEMO_STEP(movePanSmoothI(83, 16));
+  DEMO_STEP(demoHold(800));
+  DEMO_STEP(movePanSmoothI(97, 16));
+  DEMO_STEP(demoHold(600));
+  DEMO_STEP(movePanSmoothI(PAN_SERVO_DEFAULT_DEG, 12));
 
   Serial.println("[DEMO] end");
 }
