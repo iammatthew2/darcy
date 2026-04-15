@@ -24,12 +24,17 @@ static constexpr int PAN_SERVO_DEFAULT_DEG = 90;
 static constexpr int PAN_SERVO_ENCODER_FAST_DEG_PER_STEP = 13;
 static constexpr int PAN_SERVO_ENCODER_SLOW_DEG_PER_STEP = 5;
 static constexpr int EYELID_OPEN_DEG = 0;
+static constexpr int EYELID_HALF_DEG = 45;
 static constexpr int EYELID_CLOSED_DEG = 90;
+
+enum EyelidState { EYELID_OPEN = 0, EYELID_CLOSED = 1, EYELID_HALF = 2 };
 static constexpr int SLEEP_POSE_PAN_STEP_MS = 10;
 static constexpr int SLEEP_POSE_EYELID_STEP_MS = 6;
 static constexpr int BLINK_CLOSE_STEP_MS = 1;
 static constexpr int BLINK_OPEN_STEP_MS = 1;
 static constexpr uint32_t BLINK_PAUSE_MS = 180;
+static constexpr uint32_t FAST_MODE_REBOUND_PAUSE_MS = 350;
+static constexpr int FAST_MODE_REBOUND_DEG = 18;
 static constexpr uint32_t LINK_TIMEOUT_MS = 4000;
 static constexpr uint8_t WAKE_PIN = 3;  // GPIO3: LOW wakes from deep sleep
 static constexpr uint32_t BOARD_SLEEP_DELAY_MS =
@@ -55,13 +60,16 @@ volatile RemotePacket gLatestPacket = {};
 volatile uint8_t gSourceMac[6] = {0};
 
 int gPanServoAngle = PAN_SERVO_DEFAULT_DEG;
-int gEyelidServoAngle = EYELID_OPEN_DEG;
+int gEyelidServoAngle = EYELID_CLOSED_DEG;
 uint32_t gLastRxMs = 0;
 bool gHasLastEncoderPosition = false;
 int32_t gLastEncoderPosition = 0;
 uint8_t gPrevButtonsMask = 0;
 bool gUseSlowEncoderGain = false;
-bool gEyelidClosed = false;
+EyelidState gEyelidState = EYELID_CLOSED;
+int gLastEncoderDir = 0;
+uint32_t gLastEncoderFastMoveMs = 0;
+bool gReboundApplied = false;
 bool gServoPowerKilled = false;
 uint32_t gBoardSleepAt =
     0;  // millis() target for deep sleep; 0 = not scheduled
@@ -113,10 +121,10 @@ static void moveEyelidSmooth(int target, int stepMs) {
 }
 
 static void demoSequence() {
-  // 1. Slowly open eyelid if closed (~1s)
-  if (gEyelidClosed) {
+  // 1. Slowly open eyelid if not already open (~1s)
+  if (gEyelidState != EYELID_OPEN) {
     moveEyelidSmooth(EYELID_OPEN_DEG, 12);
-    gEyelidClosed = false;
+    gEyelidState = EYELID_OPEN;
   }
 
   // 2. Pause
@@ -152,7 +160,7 @@ static void demoSequence() {
   // 12. Return to center, open eyelid
   movePanSmooth(PAN_SERVO_DEFAULT_DEG, 8);
   moveEyelidSmooth(EYELID_OPEN_DEG, 8);
-  gEyelidClosed = false;
+  gEyelidState = EYELID_OPEN;
 }
 
 static void doBlink() {
@@ -167,16 +175,19 @@ static void doBlink() {
     setEyelidServoAngle(pos);
     delay(BLINK_OPEN_STEP_MS);
   }
-  gEyelidClosed = false;
+  gEyelidState = EYELID_OPEN;
 }
 
 static void toggleEyelid() {
-  if (gEyelidClosed) {
-    setEyelidServoAngle(EYELID_OPEN_DEG);
-    gEyelidClosed = false;
+  if (gEyelidState == EYELID_OPEN) {
+    moveEyelidSmooth(EYELID_CLOSED_DEG, BLINK_CLOSE_STEP_MS);
+    gEyelidState = EYELID_CLOSED;
+  } else if (gEyelidState == EYELID_CLOSED) {
+    moveEyelidSmooth(EYELID_HALF_DEG, BLINK_OPEN_STEP_MS);
+    gEyelidState = EYELID_HALF;
   } else {
-    setEyelidServoAngle(EYELID_CLOSED_DEG);
-    gEyelidClosed = true;
+    moveEyelidSmooth(EYELID_OPEN_DEG, BLINK_OPEN_STEP_MS);
+    gEyelidState = EYELID_OPEN;
   }
 }
 
@@ -184,7 +195,7 @@ static void toggleEyelid() {
 static void applySleepPose() {
   movePanSmooth(PAN_SERVO_DEFAULT_DEG, SLEEP_POSE_PAN_STEP_MS);
   moveEyelidSmooth(EYELID_CLOSED_DEG, SLEEP_POSE_EYELID_STEP_MS);
-  gEyelidClosed = true;
+  gEyelidState = EYELID_CLOSED;
 }
 
 static void killServoPower() {
@@ -271,7 +282,7 @@ static void initServos() {
 
   gEyelidServo.setPeriodHertz(50);
   gEyelidServo.attach(EYELID_SERVO_PIN, 1000, 2000);
-  setEyelidServoAngle(EYELID_OPEN_DEG);
+  setEyelidServoAngle(EYELID_CLOSED_DEG);
 
   Serial.print("Pan servo attached to GPIO");
   Serial.println(PAN_SERVO_PIN);
@@ -387,6 +398,11 @@ void loop() {
       int gain = gUseSlowEncoderGain ? PAN_SERVO_ENCODER_SLOW_DEG_PER_STEP
                                      : PAN_SERVO_ENCODER_FAST_DEG_PER_STEP;
       setPanServoAngle(gPanServoAngle + static_cast<int>(movementSteps) * gain);
+      if (!gUseSlowEncoderGain) {
+        gLastEncoderDir = (movementSteps > 0) ? 1 : -1;
+        gLastEncoderFastMoveMs = millis();
+        gReboundApplied = false;
+      }
     }
 
     if (packet.encoderPressed) {
@@ -407,6 +423,19 @@ void loop() {
     Serial.print(gPanServoAngle);
     Serial.print(" eyelid=");
     Serial.println(gEyelidServoAngle);
+  }
+
+  if (!gUseSlowEncoderGain && !gReboundApplied && gLastEncoderFastMoveMs != 0 &&
+      (millis() - gLastEncoderFastMoveMs) > FAST_MODE_REBOUND_PAUSE_MS) {
+    int reboundTarget = gPanServoAngle - gLastEncoderDir * FAST_MODE_REBOUND_DEG;
+    Serial.print("[REBOUND] dir=");
+    Serial.print(gLastEncoderDir);
+    Serial.print(" from=");
+    Serial.print(gPanServoAngle);
+    Serial.print(" to=");
+    Serial.println(reboundTarget);
+    movePanSmooth(reboundTarget, 8);
+    gReboundApplied = true;
   }
 
   if (gLastRxMs != 0 && (millis() - gLastRxMs) > LINK_TIMEOUT_MS) {

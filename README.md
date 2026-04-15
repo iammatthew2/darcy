@@ -4,11 +4,6 @@ Darcy is a Seeed XIAO ESP32-C3 based animatronic eye controller — a near-clone
 
 Board power comes over USB. Servo power is external with a common ground.
 
-## Differences from Charles
-
-- Uses a **Seeed XIAO ESP32-C3** instead of the ESP32-C6.
-- Pan servo is on GPIO **4**; eyelid servo is on GPIO **5**.
-
 ## Remote control behavior (ESP-NOW)
 
 Darcy listens for `RemotePacket` frames broadcast by Daryl. The packet carries an encoder position, encoder delta, a buttons bitmask, and an encoder-press flag.
@@ -16,24 +11,27 @@ Darcy listens for `RemotePacket` frames broadcast by Daryl. The packet carries a
 ### Encoder
 - Rotating the encoder pans the eyeball left/right (D4 servo).
 - Boot default is **FAST** gain: 13 deg per encoder step.
-- Button 5 (bit 4) toggles gain between **FAST** (13 deg/step) and **SLOW** (5 deg/step).
+- In **FAST** gain mode, after the encoder stops moving, the eye rebounds 18° in the opposite direction after a 350 ms pause.
 - Pressing the encoder recenters the pan servo to 90 deg.
 
 ### Buttons (bits 0–5)
 | Bit | Action |
 |-----|--------|
-| 0   | Snap pan to 0 deg |
-| 1   | Toggle eyelid open/closed |
-| 2   | Snap pan to 90 deg |
-| 3   | Snap pan to 135 deg |
-| 4   | Toggle encoder gain (FAST ↔ SLOW) |
+| 0   | Demo sequence (open eyelid, pan left then right, sweep far right, drift left, return to center) |
+| 1   | Sleep pose (pan to center, close eyelid — smoothly) |
+| 2   | Toggle encoder gain (FAST ↔ SLOW) |
+| 3   | Blink animation (smooth close from current position, pause, reopen) |
+| 4   | Toggle eyelid open/closed |
 | 5   | Reserved |
 
+### Sleep pose
+Sleep pose pans the eye smoothly to center (10 ms/step) then closes the eyelid smoothly (6 ms/step). It is triggered by the sleep signal, link loss, or bit 1.
+
 ### Sleep signal
-When a packet arrives with bits 6 or 7 set (out-of-band, outside the valid `0b00111111` mask), Darcy interprets it as Daryl entering deep sleep and enters **sleep pose**: pan centered at 90 deg, eyelid closed.
+When a packet arrives with bits 6 or 7 set (out-of-band, outside the valid `0b00111111` mask), Darcy interprets it as Daryl entering deep sleep, applies sleep pose, then cuts servo power.
 
 ### Link loss
-If no packet is received for 4 seconds, Darcy enters the same **sleep pose** (pan centered, eyelid closed).
+If no packet is received for 4 seconds, Darcy applies sleep pose and cuts servo power.
 
 ### MAC filter
 `DARYL_MAC` in `main.cpp` can be set to Daryl's MAC address to reject packets from other senders. All zeros disables the filter (accept any sender).
