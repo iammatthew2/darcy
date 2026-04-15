@@ -7,7 +7,7 @@ Board power comes over USB. Servo power is external with a common ground.
 ## Differences from Charles
 
 - Uses a **Seeed XIAO ESP32-C3** instead of the ESP32-C6.
-- Pan servo is on GPIO **4** (D4); eyelid servo is on GPIO **5** (D5).
+- Pan servo is on GPIO **4**; eyelid servo is on GPIO **5**.
 
 ## Remote control behavior (ESP-NOW)
 
@@ -39,8 +39,18 @@ If no packet is received for 4 seconds, Darcy enters the same **sleep pose** (pa
 `DARYL_MAC` in `main.cpp` can be set to Daryl's MAC address to reject packets from other senders. All zeros disables the filter (accept any sender).
 
 ## Wiring
-- Pan servo on GPIO 4 (D4)
-- Eyelid servo on GPIO 5 (D5)
+- Pan servo on GPIO 4
+- Eyelid servo on GPIO 5
+- Servo power KILL on GPIO 6 — HIGH cuts servo power via Adafruit #1400 KILL pin
+- Servo power ON on GPIO 7 — pulse HIGH to simulate button press via S9013 transistor (1kΩ base resistor, emitter to GND pad, collector to button pad)
+- Sleep/wake on GPIO 3 — reserved for deep sleep wake logic
+
+## TODO
+
+- [ ] Wire Adafruit Push-Button Power Switch (#1400) between servo battery and servo power rail
+  - KILL pin → GPIO 6: ESP32 drives HIGH to cut servo power
+  - Button pad simulation: S9013 NPN transistor with 1kΩ resistor on base to GPIO 7, emitter to GND button pad, collector to high-side button pad — pulse to restore servo power
+- [ ] Implement deep sleep and wake logic using GPIO 3
 
 ## Servos
 

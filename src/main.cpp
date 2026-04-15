@@ -11,6 +11,11 @@ static uint8_t DARYL_MAC[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 // C3-safe choices for XIAO ESP32-C3 test wiring.
 static constexpr uint8_t PAN_SERVO_PIN = 4;
 static constexpr uint8_t EYELID_SERVO_PIN = 5;
+static constexpr uint8_t SERVO_POWER_KILL_PIN =
+    6;  // HIGH cuts servo power (Adafruit #1400 KILL pin)
+static constexpr uint8_t SERVO_POWER_ON_PIN =
+    7;  // Pulse HIGH to restore servo power (simulate button press via S9013)
+static constexpr uint32_t SERVO_POWER_ON_PULSE_MS = 100;
 
 static constexpr int SERVO_MIN_DEG = 0;
 static constexpr int SERVO_MAX_DEG = 180;
@@ -48,6 +53,7 @@ int32_t gLastEncoderPosition = 0;
 uint8_t gPrevButtonsMask = 0;
 bool gUseSlowEncoderGain = false;
 bool gEyelidClosed = false;
+bool gServoPowerKilled = false;
 
 static bool isZeroMac(const uint8_t* mac) {
   for (size_t i = 0; i < 6; ++i) {
@@ -106,9 +112,26 @@ static void applySleepPose() {
   gEyelidClosed = true;
 }
 
+static void killServoPower() {
+  delay(300);  // Allow servos to reach sleep pose before cutting power
+  digitalWrite(SERVO_POWER_KILL_PIN, HIGH);
+  gServoPowerKilled = true;
+  Serial.println("[POWER] Servo power killed");
+}
+
+static void restoreServoPower() {
+  digitalWrite(SERVO_POWER_KILL_PIN, LOW);
+  digitalWrite(SERVO_POWER_ON_PIN, HIGH);
+  delay(SERVO_POWER_ON_PULSE_MS);
+  digitalWrite(SERVO_POWER_ON_PIN, LOW);
+  gServoPowerKilled = false;
+  Serial.println("[POWER] Servo power restored");
+}
+
 static void onSleepSignal() {
   Serial.println("[SLEEP] Daryl entering deep sleep");
   applySleepPose();
+  killServoPower();
 }
 
 static void onDataRecv(const esp_now_recv_info_t* info, const uint8_t* data,
@@ -176,6 +199,12 @@ void setup() {
   Serial.println();
   Serial.println("Darcy ESP-NOW receiver booting...");
 
+  // Keep servo power enabled (LOW = power on, HIGH = kill)
+  pinMode(SERVO_POWER_KILL_PIN, OUTPUT);
+  digitalWrite(SERVO_POWER_KILL_PIN, LOW);
+  pinMode(SERVO_POWER_ON_PIN, OUTPUT);
+  digitalWrite(SERVO_POWER_ON_PIN, LOW);
+
   initServos();
   if (!initEspNow()) {
     Serial.println("Setup failed. Rebooting in 3 seconds...");
@@ -199,6 +228,10 @@ void loop() {
     interrupts();
 
     gLastRxMs = millis();
+
+    if (gServoPowerKilled) {
+      restoreServoPower();
+    }
 
     // Filter out-of-band signals: anything with bits 6-7 set
     if ((packet.buttonsMask & ~VALID_BUTTON_BITS) != 0) {
@@ -270,6 +303,7 @@ void loop() {
   if (gLastRxMs != 0 && (millis() - gLastRxMs) > LINK_TIMEOUT_MS) {
     gLastRxMs = 0;
     applySleepPose();
+    killServoPower();
     Serial.println("link timeout -> sleep pose (pan centered, eyelid closed)");
   }
 
